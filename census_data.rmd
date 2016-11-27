@@ -8,7 +8,6 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-http://api.census.gov/data/2010/sf1?key=9742d20e8417b6f58f37c8e970e567881b9d0aca&get=P0010001,NAME&for=county:*
 
 
 ```{r}
