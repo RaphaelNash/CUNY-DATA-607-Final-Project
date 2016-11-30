@@ -1,0 +1,200 @@
+---
+title: "Economic Migration 2000-2010"
+author: "Raphael Nash and Luis Calleja"
+date: "11/21/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+http://api.census.gov/data/2010/sf1?key=9742d20e8417b6f58f37c8e970e567881b9d0aca&get=P0010001,NAME&for=county:*
+
+
+```{r}
+library("httr")
+library("readr")
+library("dplyr")
+library("tidyr")
+library("ggplot2")
+library("knitr")
+```
+
+```{r}
+#save.image('~/Documents/CUNY/data_class/project-final/finalProj.RData')
+load('~/Documents/CUNY/data_class/project-final/finalProj.RData')
+```
+
+#Hypothesis
+People will move to places that have increasing income per capita.  Therefore we would expect that you would see counties that have increasing income per capita to see an increased population.  
+
+#Load Data
+
+##Load Census Data for 2000 and 2010 from API
+
+http://www.census.gov/data/developers/data-sets/decennial-census.html
+
+Note:  The reason that 2000 and 2010 was picked was that this is the decennial census and with year over year variation may be too small to have a signifigant difference.
+**propose working with three year steps; run a regression on a lag: income per capita is a backyear and the population is measured from a later year, ex. income is from 2010 and population metric is for 2011**
+
+```{r}
+api_key <- readLines("~/Documents/CUNY/data_class/project-final/census_api_key") [[1]]
+base_url <- "http://api.census.gov/data/2010/sf1"
+query_list <- list( key=api_key, get="P0010001,NAME", `for`="county:*")
+response <- GET(base_url, query=query_list)
+
+payload <- content(response)
+
+payload <- payload[2:length(payload)]
+
+#long format: 6 pieces of data per county - 3,087 counties
+census_2010 <- data.frame(matrix(unlist(payload), nrow=length(payload), byrow=T,), stringsAsFactors = FALSE)
+
+head(census_2010)
+
+base_url <- "http://api.census.gov/data/2000/sf1"
+query_list <- list( key=api_key, get="P001001,NAME", `for`="county:*")
+response <- GET(base_url, query=query_list)
+payload <- content(response)
+
+payload <- payload[2:length(payload)]
+
+census_2000 <- data.frame(matrix(unlist(payload), nrow=length(payload), byrow=T), stringsAsFactors = FALSE)
+```
+
+##Load official state codes
+```{r}
+states <- read.delim("http://www2.census.gov/geo/docs/reference/state.txt", header = TRUE, sep = "|", colClasses=rep("character",4))
+```
+
+##Load income per capita data 
+This data is from the US Department of Labor Bureau of Economic Analysis
+
+(http://www.bea.gov/iTable/iTable.cfm?reqid=70&step=1&isuri=1&acrdn=6#reqid=70&step=25&isuri=1&7022=20&7023=7&7024=non-industry&7001=720&7029=20&7090=70)
+
+```{r}
+
+bea_2010_length <- length(read_lines("https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2010.csv"))
+                          
+bea_2000_length <-  length(read_lines("https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2000.csv"))
+
+bea_2010 <- read.csv( "https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2010.csv", nrows = (bea_2010_length-16), skip = 4, stringsAsFactors = FALSE)
+
+bea_2000 <- read.csv( "https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2000.csv", nrows = (bea_2000_length-16), skip = 4, stringsAsFactors = FALSE)
+
+```
+
+#Transform Data
+Create a wide format (census_wide) and long format (census_long) data frame for further analysis
+```{r}
+colnames(census_2010) <- c("population_2010","county_name","state_num", "county_num")
+
+colnames(census_2000) <- c("population_2000","county_name","state_num", "county_num")
+
+#contains population and income info: one obs. per county
+census_2000$population_2000 <-  as.numeric(census_2000$population_2000 )
+census_2010$population_2010 <-  as.numeric(census_2010$population_2010)
+
+
+census_2010 <- mutate(census_2010, fips = paste(state_num, county_num, sep="") )
+
+census_2000 <- mutate(census_2000, fips = paste(state_num, county_num, sep="") )
+ 
+
+ 
+colnames(bea_2000) <- c("fips", "GeoName", "income_per_capita_2000")
+colnames(bea_2010) <- c("fips", "GeoName", "income_per_capita_2010")
+
+
+bea_2000 <- subset(bea_2000, select = c(1,3))
+bea_2010 <- subset(bea_2010, select = c(1,3))
+
+bea_2000$income_per_capita_2000 <- as.numeric(bea_2000$income_per_capita_2000)
+
+bea_2010$income_per_capita_2010 <- as.numeric(bea_2010$income_per_capita_2010)
+ 
+
+
+census_2000 <- inner_join(census_2000, bea_2000, by="fips")
+
+census_2010 <- inner_join(census_2010, bea_2010, by="fips")
+
+census_2000_key_val_only <- subset(census_2000, select=c(1,5,6))
+
+
+census_wide <- inner_join(census_2010, census_2000_key_val_only, by = "fips")
+
+colnames(states) <- c("state_num", "state_abbr", "state_name" , "stats_ens")
+
+states <- subset(states, select= c("state_num", "state_abbr", "state_name" ))
+
+census_wide <- inner_join(census_wide, states, by= "state_num")
+
+census_wide <- census_wide[complete.cases(census_wide),]
+
+ 
+census_wide <- mutate(census_wide, delta_population = population_2010 - population_2000 ,
+                 delta_income_per_capita = income_per_capita_2010 - income_per_capita_2000,
+                 percent_change_population = delta_population/population_2000,
+                 percent_change_income_per_capita = delta_income_per_capita/income_per_capita_2000
+                 )
+
+
+census_long <- gather(census_wide, type, data, 
+                      c(population_2010, 
+                        income_per_capita_2010, 
+                        population_2000, 
+                        delta_population, 
+                        delta_income_per_capita, 
+                        percent_change_population, 
+                        percent_change_income_per_capita,
+                        income_per_capita_2000) )
+
+
+
+census_long$year[census_long$type %in% c("population_2010", "income_per_capita_2010" )] <- "2010"
+
+census_long$year[census_long$type %in% c("population_2000", "income_per_capita_2000" )] <- "2010"
+
+
+census_long$year[census_long$type %in% 
+                   c("delta_population",
+                     "delta_income_per_capita", 
+                     "percent_change_population", 
+                     "percent_change_income_per_capita")] <- "2000-2010"
+
+
+census_long$type[census_long$type %in% c("population_2010",  "population_2000") ] <- "population"
+census_long$type[census_long$type %in% c("income_per_capita_2010", "income_per_capita_2010")] <- "income_per_capita"
+
+census_long$type <- as.factor(census_long$type)
+census_long$year <- as.factor(census_long$year)
+
+kable(head(census_long))
+
+kable(head(census_wide))
+
+```
+
+```{r}
+summary(census_wide)
+```
+
+**Clearly a quadratic relationship**
+```{r}
+
+ggplot(data = census_wide, aes(y=percent_change_population, x=percent_change_income_per_capita )) + 
+  geom_point() + stat_smooth(method = "lm")
+```
+
+```{r}
+model_income_change_vs_pop_change <- lm(percent_change_income_per_capita ~  percent_change_population, data = census_wide)
+summary(model_income_change_vs_pop_change)
+```
+
+#Conclusion
+We found the exact opposite relationship from our hypothesis.  Counties that have a decrease in population have an increase in income per capita.  
+
+
+
+
