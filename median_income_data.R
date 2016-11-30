@@ -4,7 +4,7 @@ library('XML')
 library('stringr')
 
 download.file('https://www.census.gov/did/www/saipe/downloads/estmod14/est14ALL.txt','~/Documents/CUNY/data_class/project-final/census2014.txt',method='libcurl')
-test<-read.table('~/Documents/CUNY/data_class/project-final/census2014.txt',header=FALSE, sep="",skip=2,fill=TRUE)
+test<-read.table('~/Documents/CUNY/data_class/project-final/census2014.txt',header=FALSE, sep="",skip=2,fill=TRUE,na.strings="NA")
 
 
 #metadata... including column headers
@@ -18,3 +18,7 @@ gf[1]
 
 tgt.data<-test[,c(1:4,21:23)]
 names(tgt.data)<-c('st.code','cnty.code','all.poverty','poverty.lwr.bound','med.inc','med.inc.lwr','med.inc.uppr')
+
+tgt.1<-tgt.data[!tgt.data$med.inc=='',]
+
+write.csv(tgt.1,'~/Documents/CUNY/data_class/project-final/median2014.csv',row.names=FALSE)
