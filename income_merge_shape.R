@@ -6,12 +6,13 @@ library(tidyr)
 
 #first import the data
 median.inc<-read.csv('~/Documents/CUNY/data_class/project-final/median2014.csv')
+sapply(median.inc,class) #lots of fields need to change datatype
 
-#I made centroids earlier; these will be used within QGIS... not paramount to work with it now
+#I made centroids separately in QGIS; these will be used within QGIS... not paramount to work with it now
 centroids<-read.dbf('~/Documents/CUNY/data_class/project-final/county_shapefiles/county_centroids.dbf')
 #shapefiles of the actual counties - I will build a cluster analysis on this layer in QGIS
 cnty.shp<-read.dbf('~/Documents/CUNY/data_class/project-final/county_shapefiles/cnty_2010_data.dbf')
-
+sapply(cnty.shp,class) #importantly - 'fips' is a factor and needs to be changed to character
 names(centroids)
 names(cnty.shp)
 
@@ -19,7 +20,7 @@ head(centroids) #target 'GEOID' field... 5 digits
 head(cnty.shp) #target 'fips' for merging... 5 digits
 head(median.inc)
 
-#let's determine the treatment required of the median_income table to facilitate a merge with the shapefile on the "target" fields specified above
+#let's determine the treatment required of the median.inc table & cnty.shp to facilitate a merge on the "target" fields specified above
 #we explore the characteristics of the county and state codes in the median.inc table
 g<-sapply(median.inc$cnty.code,length)
 sapply(median.inc,class)
