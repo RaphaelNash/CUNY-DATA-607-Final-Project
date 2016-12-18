@@ -1,36 +1,61 @@
 ---
 title: "Economic Migration 2000-2010"
 author: "Raphael Nash and Luis Calleja"
-date: "11/21/2016"
-output: html_document
+date: "12/18/2016"
+output:
+    html_document:
+        theme: simplex
+        highlight: textmate
+        toc:  true
+        toc_float: false
+        code_folding: hide
+
 ---
 
 ```{r setup, include=FALSE}
+
 knitr::opts_chunk$set(echo = TRUE)
+
 ```
 
 
-```{r}
+```{r warning=FALSE, message=FALSE}
+
 library("httr")
 library("readr")
 library("dplyr")
 library("tidyr")
 library("ggplot2")
 library("knitr")
+library("rgeos")
+library("rgdal")
+library("maptools")
+library("dplyr")
+library("leaflet")
+library("scales")
+
 ```
 
-#Hypothesis
-People will move to places that have increasing income per capita.  Therefore we would expect that you would see counties that have increasing income per capita to see an increased population.  
+#Overview
+
+##Hypothesis
+
+The common story of migration in the country the USA has been that people migrate for ecomomic reasons.  That the rural areas are "poor" and the urban areas are "rich" and people are migrating from poor rural areas to rich urban areas.  
+
+##Strategy
+
+To test this hypothesis we are going to load data from income per capita at the county level from the US Bureau of Economic Analysis (BEA)  and the US Census Bureau.  We are going to look at data from 2000 and 2010 as this is the latest "official" decennial census numbers.   
 
 #Load Data
 
-##Load Census Data for 2000 and 2010 from API
+##Load Census Data 
 
-http://www.census.gov/data/developers/data-sets/decennial-census.html
+Census API documenation is at: http://www.census.gov/data/developers/data-sets/decennial-census.html.  The US Census Bureau API requires an API key.
 
-Note:  The reason that 2000 and 2010 was picked was that this is the decennial census and with year over year variation may be too small to have a signifigant difference
 
-```{r}
+
+```{r warning=FALSE, message=FALSE}
+
 api_key <- readLines(".census_api_key") [[1]]
 base_url <- "http://api.census.gov/data/2010/sf1"
 query_list <- list( key=api_key, get="P0010001,NAME", `for`="county:*")
@@ -40,7 +65,9 @@ payload <- content(response)
 
 payload <- payload[2:length(payload)]
 
-census_2010 <- data.frame(matrix(unlist(payload), nrow=length(payload), byrow=T,), stringsAsFactors = FALSE)
+census_2010 <- data.frame(matrix(unlist(payload), 
+                                 nrow=length(payload), byrow=T,),
+                          stringsAsFactors = FALSE)
 
 base_url <- "http://api.census.gov/data/2000/sf1"
 query_list <- list( key=api_key, get="P001001,NAME", `for`="county:*")
@@ -50,33 +77,79 @@ payload <- content(response)
 payload <- payload[2:length(payload)]
 
 census_2000 <- data.frame(matrix(unlist(payload), nrow=length(payload), byrow=T), stringsAsFactors = FALSE)
+
+```
+
+###Census 2010 data
+```{r}
+
+kable(head(census_2010))
+
+```
+
+###Census 2000 data
+```{r}
+
+kable(head(census_2000))
+
 ```
 
 ##Load official state codes
-```{r}
+
+Data scraped from: http://www2.census.gov/geo/docs/reference/state.txt
+
+```{r warning=FALSE, message=FALSE}
+
 states <- read.delim("http://www2.census.gov/geo/docs/reference/state.txt", header = TRUE, sep = "|", colClasses=rep("character",4))
+
+```
+
+```{r warning=FALSE, message=FALSE }
+
+kable(head(states))
+
 ```
 
 ##Load income per capital data 
-This data is from the US Department of Labor Bureau of Economic Analysis
 
-(http://www.bea.gov/iTable/iTable.cfm?reqid=70&step=1&isuri=1&acrdn=6#reqid=70&step=25&isuri=1&7022=20&7023=7&7024=non-industry&7001=720&7029=20&7090=70)
+CSV files downloaded from: http://www.bea.gov/iTable/iTable.cfm?reqid=70&step=1&isuri=1&acrdn=6#reqid=70&step=25&isuri=1&7022=20&7023=7&7024=non-industry&7001=720&7029=20&7090=70
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 
-bea_2010_length <- length(read_lines("https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2010.csv"))
+bea_2010_length <- 
+  length(read_lines("https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2010.csv"))
                           
-bea_2000_length <-  length(read_lines("https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2000.csv"))
+bea_2000_length <-  
+  length(read_lines("https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2000.csv"))
 
-bea_2010 <- read.csv( "https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2010.csv", nrows = (bea_2010_length-16), skip = 4, stringsAsFactors = FALSE)
+bea_2010 <- 
+  read.csv( "https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2010.csv", nrows = (bea_2010_length-16), skip = 4, stringsAsFactors = FALSE)
 
-bea_2000 <- read.csv( "https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2000.csv", nrows = (bea_2000_length-16), skip = 4, stringsAsFactors = FALSE)
+bea_2000 <- 
+  read.csv( "https://raw.githubusercontent.com/RaphaelNash/CUNY-DATA-607-Final-Project/master/bea_income_per_capita/ipc_2000.csv", nrows = (bea_2000_length-16), skip = 4, stringsAsFactors = FALSE)
+
+```
+
+###BEA 2010 data
+```{r warning=FALSE, message=FALSE}
+
+kable(head(bea_2010))
+
+```
+
+###BEA 2000 data
+```{r warning=FALSE, message=FALSE}
+
+kable(head(bea_2000))
 
 ```
 
 #Transform Data
-Create a wide format (census_wide) and long format (census_long) data frame for further analysis
-```{r}
+
+In order to do analysis on the data, we need to join the data from all of the sources and transform them into both a wide and long format table. We did both a wide and a long format, because at this point in time we do not know what format will be the most appropriate for the analysis we are doing.  Durring this process, we are also adding derived columns for the delta and percent change from 2000 to 2010.  
+
+```{r warning=FALSE, message=FALSE}
+
 colnames(census_2010) <- c("population_2010","county_name","state_num", "county_num")
 
 colnames(census_2000) <- c("population_2000","county_name","state_num", "county_num")
@@ -159,30 +232,145 @@ census_long$type[census_long$type %in% c("income_per_capita_2010", "income_per_c
 census_long$type <- as.factor(census_long$type)
 census_long$year <- as.factor(census_long$year)
 
+```
+
+
+###Long format table
+```{r}
+
 kable(head(census_long))
+
+```
+
+
+###Wide format table
+```{r}
 
 kable(head(census_wide))
 
 ```
 
-```{r}
+```{r warning=FALSE, message=FALSE}
 summary(census_wide)
 ```
 
+#Graph Data
 
-```{r}
+##Map Data
 
-ggplot(data = census_wide, aes(y=percent_change_population, x=percent_change_income_per_capita )) + 
-  geom_point() + stat_smooth(method = "lm")
+**Note:**  Mapping code was copied from: https://www.datascienceriot.com/mapping-us-counties-in-r-with-fips/kris/ however we made some modifications, like adding the legend, changing the color schema and of course using our data.  
+
+```{r warning=FALSE, message=FALSE, results="hide"}
+
+county_pop_change <- subset(census_wide,  
+                     select = c("fips", "percent_change_population")) 
+
+
+colnames(county_pop_change) <- c("GEOID", "percent_change_population")
+
+
+county_income_change <- subset(census_wide,  
+                     select = c("fips", "percent_change_income_per_capita")) 
+
+
+colnames(county_income_change) <- c("GEOID", "percent_change_income_per_capita")
+
+
+us.map <- readOGR(dsn=path.expand("cb_2013_us_county_20m"), layer="cb_2013_us_county_20m")
+  
+
+# Remove Alaska(2), Hawaii(15), Puerto Rico (72), Guam (66), Virgin Islands (78), American Samoa (60)
+#  Mariana Islands (69), Micronesia (64), Marshall Islands (68), Palau (70), Minor Islands (74)
+us.map <- us.map[!us.map$STATEFP %in% c("02", "15", "72", "66", "78", "60", "69",
+                                        "64", "68", "70", "74"),]
+# Make sure other outling islands are removed.
+us.map <- us.map[!us.map$STATEFP %in% c("81", "84", "86", "87", "89", "71", "76",
+                                        "95", "79"),]
 ```
 
-```{r}
+
+###Map % Population Change
+```{r fig.width=9,warning=FALSE, message=FALSE}
+
+leafmap <- merge(us.map, county_pop_change, by=c("GEOID"))
+
+popup_dat <- paste0("<strong>County: </strong>", 
+                    leafmap$NAME, 
+                    "<br><strong>Population Change: </strong>", 
+                    round(leafmap$percent_change_population * 100 , 2 ) , " % " ) 
+
+leafmap$percent_change_population <- leafmap$percent_change_population * 100
+ 
+
+pal <- colorQuantile("RdYlGn", domain = leafmap$percent_change_population , n = 20)
+
+leaflet(data = leafmap) %>% addTiles() %>%
+    addPolygons(fillColor = ~pal(percent_change_population), 
+                fillOpacity = 0.8, 
+                color = "#BDBDC3", 
+                weight = 1,
+                popup = popup_dat) %>% 
+  addLegend(position = "bottomright",
+   pal = pal, values = leafmap$percent_change_population,
+   title = "Change",
+   opacity = .5) %>% 
+  setView(-92, 37, zoom = 4)
+   
+```
+
+###Map % Income Per Capita Change
+
+```{r fig.width=9,warning=FALSE, message=FALSE}
+
+leafmap_income <- merge(us.map, county_income_change, by=c("GEOID"))
+
+popup_dat_income <- paste0("<strong>County: </strong>", 
+                    leafmap$NAME, 
+                    "<br><strong>Income Per Person Change: </strong>", 
+                    round(leafmap_income$percent_change_income_per_capita * 100 , 2 ) , " % " ) 
+
+ 
+
+pal <- colorQuantile("RdYlGn", domain = leafmap_income$percent_change_income_per_capita , n = 20)
+ 
+leaflet(data = leafmap_income) %>% addTiles() %>%
+    addPolygons(fillColor = ~pal(percent_change_income_per_capita), 
+                fillOpacity = 0.8, 
+                color = "#BDBDC3", 
+                weight = 1,
+                popup = popup_dat_income) %>%
+addLegend(position = "bottomright",
+   pal = pal, values = leafmap_income$percent_change_income_per_capita,
+   title = "Change",
+   opacity = .5)  %>% 
+  setView(-92, 37, zoom = 4)
+
+```
+
+##Income change vs population change
+```{r warning=FALSE, message=FALSE}
+
+ggplot(data = census_wide, aes(y=percent_change_population, 
+                               x=percent_change_income_per_capita )) + 
+  geom_point() + 
+  stat_smooth(method = "lm")
+```
+
+#Linear regression
+```{r warning=FALSE, message=FALSE}
+
 model_income_change_vs_pop_change <- lm(percent_change_income_per_capita ~  percent_change_population, data = census_wide)
 summary(model_income_change_vs_pop_change)
+
 ```
 
 #Conclusion
-We found the exact opposite relationship from our hypothesis.  Counties that have a decrease in population have an increase in income per capita.  
+We found the exact opposite relationship from our hypothesis.  Counties that have a decrease in population have an increase in income per capita. According to the p value this is a statiscally signifigant relationship.  This could possibly be explained by gentrification pushing people out of the city center and people moving into the surrounding areas.
+
+#Difficulties and Next Steps
+
+Our next step would be to cluster counties and find the "high" and "low" income counties in a state and see how migration patterns varied between these two clusters.  We wanted to keep these clusters of "high" and "low" income counties using adjectent counties to account for cities that spill into the sourounding counties, like the NYC and Philadelphia areas.   Unfortunately, the Census Bureau's Metropolitian Statiscal Areas was not suited for this task, because they don't account for all rural areas, especially in the west.  
+
 
 
 
